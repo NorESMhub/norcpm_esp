@@ -1,0 +1,142 @@
+#!/usr/bin/env python
+"""
+Build the norcpm component library, modified from mosart
+"""
+#pylint: disable=unused-wildcard-import, wildcard-import, multiple-imports
+#pylint: disable=wrong-import-position, invalid-name, too-many-locals
+import os, sys
+
+CIMEROOT = os.environ.get("CIMEROOT")
+if CIMEROOT is None:
+    raise SystemExit("ERROR: must set CIMEROOT environment variable")
+sys.path.append(os.path.join(CIMEROOT, "scripts", "Tools"))
+
+from standard_script_setup import *
+from CIME.case import Case
+from CIME.utils import expect, run_cmd
+from CIME.buildlib import parse_input
+
+logger = logging.getLogger(__name__)
+
+###############################################################################
+def _build_norcpm():
+###############################################################################
+
+    caseroot, libroot, bldroot = parse_input(sys.argv)
+
+    with Case(caseroot) as case:
+        #_build_assim_default(case) ## build assim codes in default norcpm 
+
+        casetools = case.get_value("CASETOOLS")
+        gmake_j = case.get_value("GMAKE_J")
+        gmake = case.get_value("GMAKE")
+        ASSIMROOT = case.get_value('NORCPM_ASSIMROOT') ## code source dir
+        mdriver   = case.get_value('MULTI_DRIVER') ## Should be False
+
+        # MULTI_DRIVER should be False
+        expect(not mdriver, "MULTI_DRIVER should be FALSE")
+
+
+        # create Filepath file
+        objroot = case.get_value("OBJROOT")
+        filepath_file = os.path.join(objroot, "esp", "obj", "Filepath")
+        if not os.path.isfile(filepath_file):
+            srcroot = case.get_value("SRCROOT")
+            caseroot = case.get_value("CASEROOT")
+            paths =[os.path.join(caseroot,"SourceMods","src.norcpm"), 
+                    os.path.join(caseroot,"Buildconf", "blomconf"), ## dimensions.F, need by micom_init()
+                    os.path.join(srcroot, "components", "norcpm", "noresm"),  ## dummy DA code
+                    os.path.join(srcroot, "components", "norcpm", ASSIMROOT,'prep_obs'),  ## DA code
+                    os.path.join(srcroot, "components", "norcpm", ASSIMROOT,'EnKF'),      ## DA code
+                    os.path.join(srcroot, "components", "norcpm", ASSIMROOT,'ensave_fixenkf'), ## DA code
+                    os.path.join(srcroot, "components", "norcpm", ASSIMROOT,'micom_init'),  ## DA code
+                    os.path.join(srcroot, "components", "norcpm", "cpl")]
+
+            with open(filepath_file, "w") as filepath:
+                filepath.write("\n".join(paths))
+                filepath.write("\n")
+
+        # Srcfiles: default is all files
+        #filepath_file = os.path.join(objroot, "esp", "obj", "Srcfiles")
+        # Depends: default is find dependency automatically
+
+        ## cpp defines
+        norcpm_cppdefs = ''
+        ### EnKF
+        norcpm_cppdefs += ' -DICE -DANOMALY -DEXPCOV'
+        ### ensave_fixenkf
+        norcpm_cppdefs += ' -DQMPI -DICE -DTRIPOLAR'
+        ### prep_obs
+        norcpm_cppdefs += ' -DQMPI -DLITTLE_ENDIAN'
+        ### micom_init
+        norcpm_cppdefs += ' -DMPI -DARCTIC'
+        ### fflags
+        norcpm_cppdefs += ' -r8'
+        ### mod_grid is duplicated name in BLOM
+        norcpm_cppdefs += ' -Dmod_grid=mod_grid_norcpm'
+        ### module name is duplicated name in BLOM
+        norcpm_cppdefs += ' -Dmod_xc=mod_xc_norcpm '
+        ### and also subroutines
+        norcpm_cppdefs += ' -Dgeoenv_file=geoenv_file_norcpm -Dinigeo=inigeo_norcpm -Dbigrid=bigrid_norcpm'
+        norcpm_cppdefs += ' -Dindxi=indxi_norcpm -Dindxj=indxj_norcpm'
+        norcpm_cppdefs += ' -Dinivar=inivar_norcpm -Deosini=eosini_norcpm'
+        norcpm_cppdefs += ' -Dmod_nctools=mod_nctools_norcpm'
+
+        # build the library
+        complib = os.path.join(libroot, "libesp.a")
+        makefile = os.path.join(casetools, "Makefile")
+
+        cmd = "%s complib -j %d MODEL=norcpm COMPLIB=%s -f %s USER_CPPDEFS='%s'" \
+            % (gmake, gmake_j, complib, makefile, norcpm_cppdefs)
+
+        rc, out, err = run_cmd(cmd, from_dir=bldroot)
+        expect(rc == 0, "Command %s failed rc=%d\nout=%s\nerr=%s" % (cmd, rc, out, err))
+        logger.info("Command %s completed with output %s\nerr %s", cmd, out, err)
+
+###############################################################################
+
+def _build_assim_default(case):
+    ## build assim codes in default norcpm
+    ## very dirty, need better coding
+    ## TBD: remove MACH=betzy in build_assim.sh
+    ## TBD: buildscript should be imply here
+    ## TBD: grid file location
+    ## variables default in NorESM/components/norcpm/cime_config/config_component.xml
+    ## norcpm case variables:
+    ##      NORCPM_ASSIMROOT
+    ##      NORCPM_ANALYSISROOT
+
+    srcroot = case.get_value("SRCROOT")
+    norcpmsrc = os.path.join(srcroot, "components", "norcpm")
+    RUNDIR = case.get_value('RUNDIR') ## work dir of DA, 
+    EXEROOT = case.get_value("EXEROOT") ## where to build
+    blddir  = EXEROOT+'/esp' ## where to build
+    MAKE_J = case.get_value('GMAKE_J') 
+
+    ASSIMROOT = case.get_value('NORCPM_ASSIMROOT') ## code source dir
+    if ASSIMROOT[0] != '/': ASSIMROOT=os.path.join(srcroot, "components", "norcpm",ASSIMROOT)
+    ANALYSISWORK = case.get_value('NORCPM_ANALYSIS_DIRNAME') ## work dir of DA
+    if ANALYSISWORK[0] != '/': ANALYSISWORK=RUNDIR+'/'+ANALYSISWORK
+    RESULT = case.get_value('NORCPM_RESULT_DIRNAME') ## other output of DA
+    if RESULT[0] != '/': RESULT=RUNDIR+'/'+RESULT
+
+    with open(os.path.join(norcpmsrc, "cime_config",'build_assim.sh'),'r') as f:
+        buildscript = f.read()
+    buildscript = buildscript.replace('$ANALYSISROOT',blddir)
+    buildscript = buildscript.replace('$OCNGRIDFILE','ocn grid file,TBD')
+    buildscript = buildscript.replace('$ASSIMROOT',ASSIMROOT)
+    buildscript = buildscript.replace('$ANALYSIS',ANALYSISWORK)
+    buildscript = buildscript.replace('$EXEROOT',EXEROOT)
+    buildscript = buildscript.replace('$SRCROOT',norcpmsrc)
+    buildscript = buildscript.replace('$RUNDIR',RUNDIR)
+    if True:  ## the makefile dependency is not well defined
+        buildscript = buildscript.replace('$MAKE_J','-j '+str(MAKE_J))
+    with open(blddir+'/build_assim.sh','w') as f:
+        f.write(buildscript)
+
+    #### run_cmd: NorESM/cime/scripts/lib/CIME/utils.py
+    rc, out, err = run_cmd('sh build_assim.sh', from_dir=blddir)
+    logger.info("Command %s completed with output %s\nerr %s", 'build_assim.sh', out, err)
+
+if __name__ == "__main__":
+    _build_norcpm()

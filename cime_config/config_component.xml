@@ -1,0 +1,149 @@
+<?xml version="1.0"?>
+<entry_id version="3.0">
+  <description>
+    <desc esp="NORCPM">NorESM data assimilation component</desc>
+  </description>
+
+  <entry id="COMP_ESP">
+    <type>char</type>
+    <valid_values>norcpm</valid_values>
+    <default_value>norcpm</default_value>
+    <group>case_comp</group>
+    <file>env_case.xml</file>
+    <desc>NorCPM</desc>
+  </entry>
+  <entry id="NORCPM_ASSIMROOT">
+    <type>char</type>
+    <default_value>assim_example</default_value>
+    <group>build_component_norcpm</group>
+    <file>env_build.xml</file>
+    <desc>The dir name of DA code under norcpm/, or absolute path.</desc>
+  </entry>
+
+  <entry id="NORCPM_INPUTDATA">
+    <type>char</type>
+    <default_value>/cluster/shared/noresm/norcpm</default_value>
+    <group>run_component_norcpm</group>
+    <file>env_run.xml</file>
+    <desc>The path to observation data for DA. Default value is for Betzy</desc>
+  </entry>
+  <entry id="NORCPM_MEAN_MOD_DIR">
+    <type>char</type>
+    <default_value>/cluster/shared/noresm/norcpm/Input/NorESM/f19_tn14</default_value>
+    <group>run_component_norcpm</group>
+    <file>env_run.xml</file>
+    <desc>The path to model climatology. Default value is for Betzy</desc>
+  </entry>
+  <entry id="NORCPM_OCNGRIDFILE">
+    <type>char</type>
+    <default_value>/cluster/shared/noresm/inputdata/ocn/blom/grid/grid_tnx1v4_20170622.nc</default_value>
+    <group>run_component_norcpm</group>
+    <file>env_run.xml</file>
+    <desc>BLOM grid file. (Should be generated automatically, TBD)</desc>
+  </entry>
+  <entry id="NORCPM_PRODUCERLIST">
+    <type>char</type>
+    <default_value>HADISST2,EN421,EN421</default_value>
+    <group>run_component_norcpm</group>
+    <file>env_run.xml</file>
+    <desc>Data assimilation data sources</desc>
+  </entry>
+  <entry id="NORCPM_OBSLIST">
+    <type>char</type>
+    <default_value>SST,TEM,SAL</default_value>
+    <group>run_component_norcpm</group>
+    <file>env_run.xml</file>
+    <desc>Data assimilation data variables</desc>
+  </entry>
+  <entry id="NORCPM_REF_PERIODLIST">
+    <type>char</type>
+    <default_value>1980-2010,1980-2010,1980-2010</default_value>
+    <group>run_component_norcpm</group>
+    <file>env_run.xml</file>
+    <desc>Data assimilation data climatology periods.</desc>
+  </entry>
+  <entry id="NORCPM_MONTHLY_ANOM">
+    <type>char</type>
+    <default_value>1,1,1</default_value>
+    <group>run_component_norcpm</group>
+    <file>env_run.xml</file>
+    <desc>Do data assimilation with anomaly.</desc>
+  </entry>
+  <entry id="NORCPM_COMBINE_ASSIM">
+    <type>char</type>
+    <default_value>0,0,1</default_value>
+    <group>run_component_norcpm</group>
+    <file>env_run.xml</file>
+    <desc>Apply data assimilation to restart file when 1.</desc>
+  </entry>
+  <entry id="NORCPM_ANOMALYASSIM">
+    <type>integer</type>
+    <default_value>1</default_value>
+    <group>run_component_norcpm</group>
+    <file>env_run.xml</file>
+    <desc>Anomaly data assimilation. Need review (TBD)</desc>
+  </entry>
+  <entry id="NORCPM_ANOM_CPL">
+    <type>integer</type>
+    <default_value>0</default_value>
+    <group>run_component_norcpm</group>
+    <file>env_run.xml</file>
+    <desc>Do not know what is it. (TBD)</desc>
+  </entry>
+  <entry id="NORCPM_OSAS">
+    <type>integer</type>
+    <default_value>0</default_value>
+    <group>run_component_norcpm</group>
+    <file>env_run.xml</file>
+    <desc>Do not know what is it. (TBD)</desc>
+  </entry>
+  <entry id="NORCPM_RFACTOR">
+    <type>integer</type>
+    <default_value>1</default_value>
+    <group>run_component_norcpm</group>
+    <file>env_run.xml</file>
+    <desc>Do not know what is it. (TBD)</desc>
+  </entry>
+  <entry id="NORCPM_fforano">
+    <type>char</type>
+    <default_value>anom</default_value>
+    <group>run_component_norcpm</group>
+    <file>env_run.xml</file>
+    <desc>Need check is it still valid(TBD)</desc>
+  </entry>
+  <entry id="NORCPM_ANALYSIS_DIRNAME">
+    <type>char</type>
+    <default_value>ANALYSIS</default_value>
+    <group>run_component_norcpm</group>
+    <file>env_run.xml</file>
+    <desc>DA work dir, or absolute path.</desc>
+  </entry>
+  <entry id="NORCPM_RESULT_DIRNAME">
+    <type>char</type>
+    <default_value>RESULT</default_value>
+    <group>run_component_norcpm</group>
+    <file>env_run.xml</file>
+    <desc>DA work dir, or absolute path.</desc>
+  </entry>
+  <entry id="NORCPM_RES">
+    <type>char</type>
+    <default_value>f19_tn14</default_value>
+    <group>run_component_norcpm</group>
+    <file>env_run.xml</file>
+    <desc>Resolution, need be generated. (TBD)</desc>
+  </entry>
+  <entry id="NORCPM_ENSAVE">
+    <type>integer</type>
+    <default_value>1</default_value>
+    <group>run_component_norcpm</group>
+    <file>env_run.xml</file>
+    <desc>Do not know what is it. (TBD)</desc>
+  </entry>
+
+  <help>
+    =========================================
+    NorCPM: Norwegian Climate Predict Model
+    =========================================
+  </help>
+
+</entry_id>

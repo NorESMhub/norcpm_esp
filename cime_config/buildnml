@@ -1,0 +1,218 @@
+#!/usr/bin/env python
+
+"""
+build norcpm namelist
+output esp_in to rundir and CaseDoc
+also the bash env settings for do_analysis.sh
+This script will be run when preview_namelists
+NOT DONE YET
+"""
+
+# Typically ignore this.
+# pylint: disable=invalid-name
+
+# Disable these because this is our standard setup
+# pylint: disable=wildcard-import,unused-wildcard-import,wrong-import-position
+# pylint: disable=multiple-imports
+import os, shutil, sys, stat
+
+CIMEROOT = os.environ.get("CIMEROOT")
+if CIMEROOT is None:
+    raise SystemExit("ERROR: must set CIMEROOT environment variable")
+sys.path.append(os.path.join(CIMEROOT, "scripts", "Tools"))
+
+from standard_script_setup import *
+from CIME.case import Case
+from CIME.buildnml import parse_input
+
+logger = logging.getLogger(__name__)
+
+def _build_esp_in(case,caseroot,compname):
+    ninst  = case.get_value('NINST_ESP')
+    rundir = case.get_value('RUNDIR')
+
+    nmldic = {}
+    nmldic.update({'case': {'NINST_ESP' : ninst }, 'norcpm': _get_norcpm_settings(case)})
+    ## order of variables must be exactly same as norcpm_enkf.F90
+    keys = {'case':['NINST_ESP'],'norcpm':["INPUTDATA","OCNGRIDFILE","PRODUCERLIST","OBSLIST","REF_PERIODLIST","MONTHLY_ANOM","COMBINE_ASSIM","ANOMALYASSIM","ANOM_CPL","OSAS","RFACTOR","fforano","ANALYSIS_DIRNAME","RESULT_DIRNAME","RES","MEAN_MOD_DIR","ENSAVE","ENSSIZE"]}
+    nmlstr = _dict_to_nml_str(nmldic,keys=keys)
+    
+    with open(os.path.join(rundir,'esp_in'),'w') as f:
+        f.write(nmlstr)
+
+def _get_norcpm_settings(case):
+    ## return dict() of for namelist 'norcpm' section
+    cg = case.get_value
+    conf = {
+        'INPUTDATA'       : cg("NORCPM_INPUTDATA"),
+        'MEAN_MOD_DIR'    : cg("NORCPM_MEAN_MOD_DIR"),
+        'OCNGRIDFILE'     : cg("NORCPM_OCNGRIDFILE"),
+        'PRODUCERLIST'    : cg("NORCPM_PRODUCERLIST"),
+        'OBSLIST'         : cg("NORCPM_OBSLIST"),
+        'REF_PERIODLIST'  : cg("NORCPM_REF_PERIODLIST"),
+        'MONTHLY_ANOM'    : cg("NORCPM_MONTHLY_ANOM"),
+        'COMBINE_ASSIM'   : cg("NORCPM_COMBINE_ASSIM"),
+        'ANOMALYASSIM'    : cg("NORCPM_ANOMALYASSIM"),
+        'ANOM_CPL'        : cg("NORCPM_ANOM_CPL"),
+        'OSAS'            : cg("NORCPM_OSAS"),
+        'RFACTOR'         : cg("NORCPM_RFACTOR"),
+        'fforano'         : cg("NORCPM_fforano"),
+        'ANALYSIS_DIRNAME': cg("NORCPM_ANALYSIS_DIRNAME"),
+        'RESULT_DIRNAME'  : cg("NORCPM_RESULT_DIRNAME"),
+        'RES'             : cg("NORCPM_RES"),
+        'ENSAVE'          : cg("NORCPM_ENSAVE"),
+        'ENSSIZE'         : cg("NINST_ESP") 
+        }
+    for i in ['PRODUCERLIST','OBSLIST','REF_PERIODLIST','MONTHLY_ANOM','COMBINE_ASSIM']:
+        if type(conf[i]) == type(''): conf[i] = [ j.strip() for j in conf[i].split(',') ]
+    return conf
+ 
+
+def _model_resolution(case):
+    ## model resolution
+    ## for now, it's f19_tn14 or f09_tn14 only
+    atmgrid = case.get_value("ATM_GRID")
+    if atmgrid == '1.9x2.5': atmgrid = 'f19'
+    if atmgrid == '0.9x1.25': atmgrid = 'f09'
+    return atmgrid+"_tn14"
+
+def _lib_mpirun(case):
+    mpirun = case.get_value('MPI_RUN_COMMAND')
+    if mpirun not in ["", None, "UNSET"]: return mpirun
+
+    # Things that will have to be matched against mpirun element attributes
+    job = case.get_primary_job()
+    env_mach_specific = case.get_env('mach_specific')
+
+    mpi_attribs = {
+        "compiler" : case.get_value("COMPILER"),
+        "mpilib"   : case.get_value("MPILIB"),
+        "threaded" : case.get_build_threaded(),
+        "queue" : case.get_value("JOB_QUEUE", subgroup=job),
+        "unit_testing" : False
+        }
+
+    executable, mpi_arg_list = env_mach_specific.get_mpirun(case, mpi_attribs, job)
+    return executable
+    
+def _build_default_norcpm_settings(case,caseroot,compname):
+    """
+    Invoke norcpm configure - output goes in `caseroot`/Buildconf/norcpmconf
+    """
+    template = os.path.join(caseroot,'Buildconf','norcpm_settings.bash')
+
+    caseroot = case.get_value("CASEROOT")
+    cimeroot = case.get_value("CIMEROOT")
+    norcpm_root = case.get_value("COMP_ROOT_DIR_ESP")
+    compset = case.get_value("COMPSET")
+    ninst = case.get_value("NINST_ESP")
+    ntask_ocn = case.get_value("NTASKS_OCN")
+    ninst_ocn = case.get_value("NINST_OCN")
+    anadir = case.get_value("NORCPM_ANALYSIS_DIRNAME")
+    resdir = case.get_value("NORCPM_RESULT_DIRNAME")
+    res = _model_resolution(case)
+    inputdata = case.get_value("NORCPM_INPUTDATA")
+    mpirun = _lib_mpirun(case)
+    ntask_blom_dimensions = 32  ## see the dimensions.F in build_assim.sh
+
+    ## get grid_file from BLOM input data list
+    with open(caseroot+'/Buildconf/blom.input_data_list','r') as f:
+        for i in f:
+            key = i.split('=')[0].strip()
+            if key == 'grid_file':
+                grid_file = i.split('=')[1].strip()
+                break
+    
+    norcpmconf = os.path.join(caseroot, "Buildconf", "norcpmconf")
+    if not os.path.isdir(norcpmconf):
+        os.makedirs(norcpmconf)
+
+    ns = os.path.join(norcpm_root,'cime_config','norcpm_settings.bash')
+    with open(ns,'r') as f:
+        ns = f.read()
+    ns = ns.replace('RES:=CASERES','RES:='+res)
+    ns = ns.replace('ENSSIZE:=NINST_ESP','ENSSIZE:='+str(ninst))
+    ns = ns.replace('NTASKS_MICOM_INIT:=NTASKS_MICOM_INIT','NTASKS_MICOM_INIT:='+str(ninst_ocn*ntask_blom_dimensions))
+    ns = ns.replace('INPUTDATA:=NORCPM_INPUTDATA','INPUTDATA:='+inputdata)
+    ns = ns.replace('OCNGRIDFILE:=OCNGRIDFILE','OCNGRIDFILE:='+grid_file)
+    ns = ns.replace('NTASKS_OCN:=NTASKS_OCN','NTASKS_OCN:='+str(ntask_ocn))
+    ns = ns.replace('MPIRUN:=mpirun','MPIRUN:='+mpirun)
+    ns = ns.replace('ANALYSIS_DIRNAME:=NORCPM_ANALYSIS_DIRNAME','ANALYSIS_DIRNAME:='+anadir)
+    ns = ns.replace('RESULT_DIRNAME:=NORCPM_RESULT_DIRNAME','RESULT_DIRNAME:='+resdir)
+
+    with open(os.path.join(norcpmconf, "norcpm_settings.bash"), 'w') as f:
+        f.write(ns)
+
+    return 
+        
+def _build_norcpm_settings(case,caseroot,compname):
+    norcpmconf = os.path.join(caseroot, "Buildconf", "norcpmconf")
+    casesetting = os.path.join(norcpmconf, "norcpm_settings.bash")
+    if not os.path.exists(casesetting): _build_default_norcpm_settings(case,caseroot,compname)
+
+    rundir = case.get_value("RUNDIR")
+    analysisdir = case.get_value('NORCPM_ANALYSIS_DIRNAME')
+    if analysisdir[0] != '/': analysisdir=os.path.join(rundir,analysisdir)
+    if not os.path.exists(analysisdir): os.mkdir(analysisdir)
+    shutil.copyfile(casesetting,os.path.join(analysisdir,"norcpm_settings.bash"))
+
+''' TBD: delete in NorCPM_ESP
+def _build_norcpm_da_script(case,caseroot,compname):
+    rundir = case.get_value('RUNDIR')
+    norcpmconf = os.path.join(caseroot, "Buildconf", "norcpmconf")
+    dascript = os.path.join(norcpmconf, "do_analysis.sh")
+    if not os.path.exists(dascript):
+        norcpm_root = case.get_value("COMP_ROOT_DIR_ESP")
+        src = os.path.join(norcpm_root,'cime_config',"do_analysis.sh")
+        shutil.copyfile(src,dascript)
+
+    analysisdir = case.get_value('NORCPM_ANALYSIS_DIRNAME')
+    if analysisdir[0] != '/': analysisdir=os.path.join(rundir,analysisdir,"do_analysis.sh")
+    shutil.copyfile(dascript,analysisdir)
+    os.chmod(analysisdir,stat.S_IRWXU)
+'''
+def buildnml(case, caseroot, compname):
+    _build_esp_in(case, caseroot, compname)
+    _build_norcpm_settings(case,caseroot,compname)
+    ##_build_norcpm_da_script(case,caseroot,compname)
+
+
+
+def _dict_to_nml_str(nmldic,keys={}):
+    ## simple convert data to namelist file string
+    ## nmldic: 2 levels dict to generate namelist as
+    ##      &dict_l1_key1
+    ##      dict_l2_key1 = dict_l2_value1
+    ##      dict_l2_key2 = dict_l2_value2
+    ##      /
+    ## need better coding
+
+    nmlstr = ''
+    for j in keys:
+        nmlstr += '&'+j+'\n'
+        sectkeys = keys.get(j) or nmldic[j].keys()
+        for k in sectkeys:
+            v = nmldic[j][k]
+            if type(v) == type(''):
+                nmlstr += '  '+k+' = "'+str(v)+'"\n'
+            elif type(v) == type([]):
+                if type(v[0]) == type(''):
+                    nmlstr += '  '+k+' = '
+                    for vv in v:
+                        nmlstr += '"'+vv+'",'
+                    nmlstr = nmlstr[:-1]+'\n'
+                else:
+                    nmlstr += '  '+k+' = '+','.join([str(i) for i in v])+'\n'
+            else:
+                nmlstr += '  '+k+' = '+str(v)+'\n'
+        nmlstr += '/\n'
+    return nmlstr
+
+## for consistant
+def _main_func():
+    caseroot = parse_input(sys.argv)
+    with Case(caseroot) as case:
+        buildnml(case, caseroot, "norcpm")
+
+if __name__ == "__main__":
+    _main_func()
