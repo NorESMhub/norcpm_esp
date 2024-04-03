@@ -11,6 +11,7 @@
   It is still under development.
 
 ### Usage
+  The content in cime_config/config_compsets.xml is needed to insert to NorESM/cime_config/config_compsets.xml
   Check the test script in 'testscript/'.
 
 
