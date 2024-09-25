@@ -6,7 +6,7 @@
   [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.1169902.svg)](https://doi.org/10.5281/zenodo.1169902)
 
 ### Overview
-  NorCPM do ensemble data assimilation with NorESM1 and 2. NorCPM_ESP apply the process as an ESP component in NorESM2. Which use pause/resume to reduce overhead time from restarting model.
+  NorCPM do ensemble data assimilation with NorESM1 and 2. NorCPM_ESP apply the process as an ESP component in NorESM2. Which modify model data in memory to reduce overhead time from restarting model.
 
   For now NorCPM_ESP is only DA for BLOM component.
   
@@ -20,5 +20,5 @@
 ### Portability
   It only tested on Betzy.
 
-  The SST DA needs monthly file named as YYYY-MM.nc and placed at specific structure of directory.
+  The SST DA needs monthly file named as YYYY_MM_DD.nc and placed at specific structure of directory.
 
