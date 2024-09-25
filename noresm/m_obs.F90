@@ -52,6 +52,7 @@ module m_obs
   use mod_measurement
   use m_uobs
   use m_insitu
+  use norcpm_otf, only: get_obs_records_and_allocate
   implicit none
 
   !
@@ -100,49 +101,61 @@ contains
     integer :: rsize
     integer :: ios
     integer :: o
+    integer :: fsize
 
+    if (allocated(obs))deallocate(obs) !! for norcpm_esp
     if (nobs >= 0) then
        return
     end if
+    if(.false.) then !! use norcpm_otf instead of read file
+        inquire(file = 'observations.uf', exist = exists)
+        if (.not. exists) then
+           if (master) then
+              print *, 'ERROR: obs_getnobs(): file "observations.uf" does not exist'
+           end if
+           stop
+        end if
+        inquire(iolength = rsize) record !! unit in byte or double word(4bytes)?
+        if(.true.)then  !! from Ingo's solution. Use inquire instead of read file over
+            inquire(file='observations.uf',SIZE=fsize)
+            !! in ifort with -assume reclbyte, rsize is in byte
+            nobs = fsize/rsize
+        else            !! this is original code
+            open(10, file = 'observations.uf', form = 'unformatted',&
+                 access = 'direct', recl = rsize, status = 'old')
 
-    inquire(file = 'observations.uf', exist = exists)
-    if (.not. exists) then
-       if (master) then
-          print *, 'ERROR: obs_getnobs(): file "observations.uf" does not exist'
-       end if
-       stop
+            ! I guess there is no other way to work out the length other than read the
+            ! file in fortran - PS
+            !
+            o = 1
+            do while (.true.)
+               read(10, rec = o, iostat = ios) record
+               if (ios /= 0) then
+                  nobs = o - 1
+                  exit
+               end if
+               o = o + 1
+            enddo
+
+            close(10)
+        end if !! from Ingo's solution. Use inquire instead read file over
+        allocate(obs(nobs))
+        ! PS - there were problem with using rewind(): g95 reported:
+        ! "Cannot REWIND a file opened for DIRECT access". Therefore reopen.
+        !
+        open(10, file = 'observations.uf', form = 'unformatted',&
+             access = 'direct', recl = rsize, status = 'old')
+        do o = 1, nobs
+           read(10, rec = o) obs(o)
+           call ucase(obs(o) % id)
+        enddo
+        close(10)
     end if
-    inquire(iolength = rsize) record
-    open(10, file = 'observations.uf', form = 'unformatted',&
-         access = 'direct', recl = rsize, status = 'old')
-
-    ! I guess there is no other way to work out the length other than read the
-    ! file in fortran - PS
-    !
-    o = 1
-    do while (.true.)
-       read(10, rec = o, iostat = ios) record
-       if (ios /= 0) then
-          nobs = o - 1
-          exit
-       end if
-       o = o + 1
-    enddo
-
-    if(allocated(obs))deallocate(obs) ! blc
-    allocate(obs(nobs))
-
-    ! PS - there were problem with using rewind(): g95 reported:
-    ! "Cannot REWIND a file opened for DIRECT access". Therefore reopen.
-    !
-    close(10)
-    open(10, file = 'observations.uf', form = 'unformatted',&
-         access = 'direct', recl = rsize, status = 'old')
+    !! use the data already stored in memory
+    call get_obs_records_and_allocate(obs,nobs)
     do o = 1, nobs
-       read(10, rec = o) obs(o)
        call ucase(obs(o) % id)
     enddo
-    close(10)
 
     if (RFACTOR1 /= 1.0d0) then
        do o = 1, nobs
@@ -196,7 +209,7 @@ contains
        else
           dmin = -1.0d6
           dmax = 1.0d6
-          print *, 'ERROR: obs_testrange(): "', trim(unique_obs(uo)), '": unknown type'
+          print *, 'ERROR: obs_testrange(): "', trim(unique_obs(uo)), '": unknown type',uo
           stop
        end if
        
@@ -232,7 +245,7 @@ contains
     integer :: iuobs
 
     if (master) then
-       print '(a,i2)', ' EnKF: preparing observations, blc: nuobs=',nuobs
+       print '(a)', ' EnKF: preparing observations'
     end if
     do iuobs = 1, nuobs
        call obs_prepareuobs(trim(unique_obs(iuobs)))

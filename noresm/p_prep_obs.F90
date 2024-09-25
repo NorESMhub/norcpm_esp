@@ -61,6 +61,8 @@ subroutine p_prep_obs()
   use m_superobs
   use m_uobs
   use m_get_micom_dim
+  !! save obs data to memory, instead of write_wet_file()
+  use norcpm_otf, only: append_obs_record
   implicit none
 
   integer, parameter :: STRLEN = 512
@@ -92,6 +94,7 @@ subroutine p_prep_obs()
   integer :: i
   integer :: nthisobs
   integer, allocatable, dimension(:) :: thisobs
+  integer :: t0,t1,clockrate !! for timing
 
   gr = default_grid
   data_eq_obs = .false.
@@ -347,8 +350,10 @@ subroutine p_prep_obs()
      dosuperob = .true.
      is3d = .true.
      read(fnamehdr, *) var
+     call system_clock(t0,clockrate)
      call read_EN4_profile(fname, obstype, var, nx, ny, data, nrobs)
-     
+     call system_clock(t1,clockrate)
+     print'(a,g0,x,a)','read_EN4_profile() timing = ',real(t1-t0)/real(clockrate),'sec'
      data_eq_obs = .true.
   else
      print *, 'unknown producer ', trim(producer), ' in "infile.data"'
@@ -403,7 +408,8 @@ subroutine p_prep_obs()
 
   ! Write data to the binary file "observations.uf"
   !
-  call write_wet_file(obs, nrobs)
+  !!call write_wet_file(obs, nrobs)
+  call append_obs_record(obs(1:nrobs)) !! put obs to obs_otf in norcpm_otf
 
   call uobs_get(obs(1 : nrobs) % id, nrobs, .true.)
   allocate(thisobs(nrobs))

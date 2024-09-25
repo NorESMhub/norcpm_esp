@@ -8,7 +8,21 @@ c
 #define DIAG
 c
       use mod_xc
-
+      use mod_state  !! BLOM variables
+      use mod_vcoord, only: sigmar !! BLOM vaiables
+      use mod_time, only: baclin,batrop
+      use mod_barotp, only: ubflx, vbflx
+      use mod_diffusion, only: umfltd,vmfltd,utfltd,vtfltd,utflld,vtflld,usfltd
+     .    ,vsfltd,usflld,vsflld
+      use MOD_GRID, only: qclon, qclat, pclon, pclat, uclon, uclat,
+     .                    vclon, vclat, scqx, scqy, scpx, scpy, scux,
+     .                    scuy, scvx, scvy, scq2, scp2, scu2, scv2,
+     .                    qlon, qlat, plon, plat, ulon, ulat, vlon,
+     .                    vlat, depths, corioq, coriop, betafp, angle,
+     .                    cosang, sinang, nwp
+      use mod_forcing, only: ustar,buoyfl
+      use mod_barotp, only: pvtrop
+      use mod_pgforc, only: pgfxm,pgfym,pgfx,pgfy
 #ifdef DIAG
       use mod_nctools
 #endif
@@ -86,8 +100,8 @@ c
       !write(*,*)'micom_init(): after crcinit imem=', imem
 c
 c --- set variables usually set in namelist
-      baclin=4800.
-      batrop=96.
+      !!mod_time!!baclin=4800.
+      !!mod_time!!batrop=96.
       path='./'
       path_len=2
 c --- ------------------------------------------------------------------
@@ -122,6 +136,7 @@ c
 #ifdef DOSA
       oldfile='previous'//cmem//'.nc'
 #endif
+      if(.false.)then !! norcpm_otf, no need to read from restart
       if (mnproc.eq.1) then
 c        write (lp,'(2a)') ' reading initial condition from ',
 c     .                    path(1:path_len)//trim(oldfile)
@@ -898,6 +913,8 @@ c --- read rbdmc2
         status=nf_close(ncid)
       endif       
 c
+      end if !! norcpm_otf, no need to read from restart
+      if(.false.) then !! turn off ice here
 c --- read ice volume before and after assimilation 
       inquire(file='compensate_ice_freshwater',
      .  exist=compensate_ice_freshwater)
@@ -965,6 +982,7 @@ c
       call xcaput(tmp2dsum,vicenew,1)
       endif 
 c
+      end if !! !! turn off ice here
 CCCCCC Start correction
       call xctilr(dp, 1,kk, 1,1, halo_ps)
       call xctilr(pb, 1,2, nbdy,nbdy, halo_ps)
@@ -1341,6 +1359,8 @@ c$OMP PARALLEL DO PRIVATE(k,dps)
 c$OMP END PARALLEL DO
 c
 
+
+      if(.false.)then !! norcpm_otf, no need to read from restart
 #ifdef DIAG
        do j=1,jj
           do i=1,ii
@@ -1481,6 +1501,7 @@ CC    Dump single 3D
       call ncputi('micom_init',1)
       call ncfcls
 #endif
+      end if !! norcpm_otf, no need to read from restart
 c
 c      if (mnproc.eq.1) print *, 'end of micom_ensemble_init'
       !call xcstop(' ')

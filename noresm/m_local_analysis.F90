@@ -81,6 +81,7 @@
 !                      -- MPI parallelisation
 
 module m_local_analysis
+
   implicit none
 
   !
@@ -131,6 +132,9 @@ module m_local_analysis
   !
   integer, private :: SCHEME_USED = SCHEME_DENKF
 
+  ! norcpm_otf
+  logical :: seprate_tmpX5 = .false.
+  logical :: use_x5_otf = .true.
 contains 
 
   ! This routine is called for each "field" (horizontal slab) after calcX5().
@@ -153,6 +157,9 @@ contains
     use qmpi_fake
 #endif
     use mod_measurement
+    !! for parallel
+    use norcpm_otf, only: ufcomm,ufrank,get_x5_otf_j
+    use mpi, only: MPI_BCAST
     implicit none
 
     integer, intent(in) :: ni, nj ! size of grid
@@ -173,19 +180,33 @@ contains
     real(4) :: infl
 
     !KAL -- all nodes open for read access to temporary "X5" file 
+    !!! X5 is allocated  in EnKF.F90
     inquire(iolength = irecl) X5(1 : nrens, 1 : nrens, 1 : ni), X5pad
-    open(17, file = 'tmpX5.uf', form = 'unformatted', access = 'direct',&
-         status = 'old', recl = irecl)
+    if (seprate_tmpX5.and.ufrank.eq.0) &
+        open(17, file = 'tmpX5.uf', form = 'unformatted', access = 'direct',&
+             status = 'old', recl = irecl)
 
     do j = 1, nj
        ! read X5 from disk
-       read(17, rec = j, iostat = iostatus) X5
-       if (iostatus /= 0) then 
-          print *, 'ERROR: local_analysis(): I/O error at reading X5, iostatus = ', iostatus
-          print *, 'ERROR: at j = ', j
-          stop
+       if(seprate_tmpX5)then
+           if(ufrank.eq.0)then
+               read(17, rec = j, iostat = iostatus) X5
+               if (iostatus /= 0) then 
+                  print *, 'ERROR: local_analysis(): I/O error at reading X5, iostatus = ', iostatus
+                  print *, 'ERROR: at j = ', j
+                  stop 1
+               end if
+           end if
+           call MPI_BCAST(X5,size(X5),MPI_REAL4,0,ufcomm,iostatus)
+           if (iostatus /= 0) then 
+              print *, 'ERROR: local_analysis(): MPI_BCAST() error X5, ierr = ', iostatus
+              print *, 'ERROR: at j = ', j
+              stop 1
+           end if
+       end if ! seprate_tmpX5
+       if(use_x5_otf)then !! on-the-fly
+            call get_x5_otf_j(j,X5)
        end if
- 
        do i = 1, ni
           ! skip this cell if it is on land
           if (depths(i,j) <= 0.0) then
@@ -341,7 +362,7 @@ contains
           end if
        enddo
     enddo
-    close(17)
+    if (ufrank .eq.0) close(17)
   end subroutine update_fields
 
 
@@ -376,6 +397,8 @@ contains
     use m_spherdist
     use m_random
     use m_point2nc
+    use norcpm_otf, only: x5_otf_get_m1m2,x5_otf_save_j, &
+        gather_x5_otf_to_pe0
     implicit none
 
     ! Input/output arguments
@@ -444,6 +467,12 @@ contains
     integer :: pnlobs(nuobs)
     integer :: uo
 
+    !! for seprate file per process
+    character(len=4) :: pestr
+    integer :: t0, t1, clockrate
+    integer :: sumnlobs
+    logical :: timinglog = .false.
+
     if (trim(METHODTAG) == "ENKF") then
        SCHEME_USED = SCHEME_ENKF
     elseif (trim(METHODTAG) == "DENKF") then
@@ -507,9 +536,10 @@ contains
     nX5pad = get_npad_la(nrens * nrens, ni)
     if(allocated(X5pad))deallocate(X5pad)
     allocate(X5pad(nX5pad))
+    !!! X5 is allocated  in EnKF.F90 with (ENSSIZE, ENSSIZE, idm)
     inquire(iolength = irecl) X5, X5pad
 
-    if (master) then
+    if (.false..and.master) then !! not use in otf
        open(17, file = 'tmpX5.uf', form = 'unformatted', access = 'direct', status = 'unknown', recl = irecl)
        ! get the necessary space on disk, before starting simultaneous writing
        ! by different nodes
@@ -519,9 +549,9 @@ contains
 #if defined (QMPI)
     call barrier()
 #endif
-    open(17, file = 'tmpX5.uf', form = 'unformatted', access = 'direct',&
-         status = 'old', recl = irecl)
-
+    !!open(17, file = 'tmpX5.uf', form = 'unformatted', access = 'direct',&
+    !!     status = 'old', recl = irecl)
+    !! PG, use small files to save output, instead of everyone write to same file
     open(31, file = trim(JMAPFNAME), status = 'old', iostat = iostatus)
     if (iostatus /= 0) then
        if (master) then
@@ -535,14 +565,14 @@ contains
        read(31, *, iostat = iostatus) jmap
        if (iostatus /= 0) then
           print *, 'ERROR reading jmap.txt'
-          stop
+          stop 1
        end if
        close(31)
        jmap_check = 1
        jmap_check(jmap) = 0
        if (sum(jmap_check) /= 0) then
           print *, 'ERROR: non-zero control sum for jmap =', sum(jmap_check)
-          stop
+          stop 1
        end if
     end if
 
@@ -553,6 +583,12 @@ contains
     srf_array = 0.0
     psrf_array = 0.0
     nlobs_array = 0
+    if(timinglog)print'(a,3(i4,x))','m_local_analysis.F90:573; mype,m1,m2 = ',qmpi_proc_num,my_first_iteration, my_last_iteration
+    sumnlobs = 0
+    !! allocate X5_otf and j range to save
+    if(use_x5_otf)call x5_otf_get_m1m2(my_first_iteration,my_last_iteration,ni,nj)
+
+    call system_clock(t0,clockrate)
     do jj = my_first_iteration, my_last_iteration
        j = jmap(jj)
 !       print *, 'pre_local_analysis: jj =', jj, 'j =', j
@@ -579,6 +615,7 @@ contains
              print *, 'testthiscell: nlobs(,', i, ',', j, ') =', nlobs
           end if
 
+          sumnlobs = sumnlobs + nlobs
           if (nlobs == 0) then
              ! just in case
              X5(:, :, i) = 0.0
@@ -833,9 +870,25 @@ contains
           end if
        end do ! i = 1, ni
 
-       ! Write one "stripe" of the temporary matrix X5 to disk
-       iter = 0
-       do while (.true.)
+       !! PG, use 1 file per stripe
+       if(seprate_tmpX5)then
+           write(pestr,'(i4.4)')j
+           open(27, file = 'tmpX5-'//pestr//'.uf', form = 'unformatted', access = 'direct',&
+             status = 'unknown', recl = irecl)
+           write(27, rec = 1, iostat = iostatus) X5
+           if(iostatus.ne.0)print*,'m_local_analysis.F90:856 write tmpX5-'//pestr//'.uf error'
+           close(27)
+       end if
+       !! PG, use X5_otf save data, not all proc will be here
+       if(use_x5_otf)then
+            call x5_otf_save_j(X5,j)
+       end if
+
+       !! old code, everyone write to same file and read to check
+       !! not use in otf
+       !! Write one "stripe" of the temporary matrix X5 to disk
+       !iter = 0
+       do while (.false.) 
           iter = iter + 1
           write(17, rec = j, iostat = iostatus) X5
           if (iostatus /= 0) then 
@@ -875,14 +928,44 @@ contains
           exit ! OK
        end do
 !       print *, 'FINISHED j =', j, ' jj =', jj
-    end do ! j = my_first_iteration, my_last_iteration
+    end do ! jj = my_first_iteration, my_last_iteration; j = jmap(jj)
+    call system_clock(t1)
+    if(timinglog)print'(a,i4,x,i0,x,f8.4)','m_local_analysis.F90:929; timing, main parallel jj;mype,sumnlobs,time: ',qmpi_proc_num,sumnlobs,real(t1-t0)/real(clockrate)
 
-    close(17) ! X5 file
+    !old code!close(17) ! tmpX5 
+
+    !! gather all tmpX5-j.uf to tmpX5.uf
+    if(seprate_tmpX5)call barrier()
+    if(seprate_tmpX5.and.master)then
+        call system_clock(t0,clockrate)
+        open(17, file = 'tmpX5.uf', form = 'unformatted', access = 'direct', status = 'unknown', recl = irecl)
+        do jj = 1, nj
+            j = jmap(jj)
+            write(pestr,'(i4.4)')j
+            open(27, file = 'tmpX5-'//pestr//'.uf', form = 'unformatted', access = 'direct',&
+                status = 'old', recl = irecl)
+            read(27, rec = 1, iostat = iostatus) X5
+            if(iostatus.ne.0)print*,'m_local_analysis.F90:911 read tmpX5-'//pestr//'.uf error'
+            write(17, rec = j, iostat = iostatus) X5
+            if(iostatus.ne.0)print*,'m_local_analysis.F90:913 write tmpX5-'//pestr//'.uf error'
+        end do !! jj=1,nj;  j=jmap(jj)
+        close(17)
+        call system_clock(t1)
+        t0 = t1-t0 !! reuse t0 as dt
+        INQUIRE(FILE='tmpX5.uf', SIZE=t1) !! reuse t1 as size
+        print*,'m_local_analysis.F90:925 calc_X5(), concentrate time,size = ',real(t0)/real(clockrate),t1
+    end if !! master only, concentrate tmpX5-*.uf
+
+    !! gather all X5 to X5_otf of mype .eq.0
+    if(use_x5_otf)then
+        call gather_x5_otf_to_pe0()
+    end if
 
     if (SCHEME_USED == SCHEME_ENKF) then
        deallocate(D)
     end if
 
+    call system_clock(t0,clockrate)
 #if defined(QMPI)
     if (.not. master) then
        ! broadcast nlobs and dfs arrays to master
@@ -935,6 +1018,8 @@ contains
     ! broadcast nlobs array
     call broadcast(nlobs_array)
 #endif
+    call system_clock(t1)
+    if(master.and.timinglog)print'(a,f8.4)','m_local_analysis.F90:1018; timing, gather loop: ',real(t1-t0)/real(clockrate)
 
     if (master) then
        nlobs_max = maxval(nlobs_array)

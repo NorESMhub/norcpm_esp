@@ -308,7 +308,7 @@ program EnKF
         call p2nc_storeforecast(idm, jdm, ENSSIZE, numfields, m, fld(:, ENSSIZE * (m - m1) + 1 : ENSSIZE * (m + 1 - m1)))
         infls(m - m1 + 1) = prm_getinfl(trim(fieldnames(m)));
         isdp(m - m1 + 1) = (trim(fieldnames(m)) == 'dp' )
-     end do
+     end do  ! do m = m1, m2
 
      call update_fields(idm, jdm, ENSSIZE, nfields, nlobs_array, depths,&
           fld(1,1), infls, isdp)
@@ -325,7 +325,7 @@ program EnKF
                 fieldnames(m), fieldlevel(m), 1, idm, jdm)
         end do
      end do
-  end do
+  end do !!  do m1 = my_first_iteration, my_last_iteration, NFIELD
   deallocate(X5)
   deallocate(fld)
 

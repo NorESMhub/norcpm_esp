@@ -1,0 +1,114 @@
+Need unit test
+
+nfw():  ice, later?
+    ensave_fixenkf/p_fixenkf_cice.F90:96:   oldfile    ='forecast_ice'//cmem//'.nc'    
+    ensave_fixenkf/p_fixenkf_cice.F90:97:   oldfile_oce='forecast'//cmem//'.nc'
+    ensave_fixenkf/p_fixenkf_cice.F90:103:      write(*,*) 'Can not find '//'forecast_ice'//cmem//'.nc'
+    ensave_fixenkf/p_fixenkf_cice.F90:109:      write(*,*) 'Can not find '//'forecast'//cmem//'.nc'
+    ensave_fixenkf/p_fixenkf_cice.F90:326:   maskfile='forecast'//cmem//'.nc'
+
+get_mod_fld_new(): m_insitu.F90, later?
+    EnKF/m_insitu.F90:39:!                  of insitu_writeforecast()
+    EnKF/m_insitu.F90:43:!                20/04/2008 PS: added insitu_QC() and insitu_writeforecast()
+    EnKF/m_insitu.F90:406:       fname = 'forecast001'
+    EnKF/m_insitu.F90:705:  subroutine insitu_writeforecast(obstag, nobs, nrens, S, obs)
+    EnKF/m_insitu.F90:730:    print *, 'Appending interpolated forecast for "', trim(obstag),&
+    EnKF/m_insitu.F90:747:    call nfw_def_var(fname, ncid, 'forecast', nf_double, 2, dids, v_id)
+    EnKF/m_insitu.F90:748:    call nfw_def_var(fname, ncid, 'forecast_variance', nf_double, 2, dids, variance_id)
+    EnKF/m_insitu.F90:786:  end subroutine insitu_writeforecast
+
+get_micom_fld_new(): read 2 layer dp only, make a dp.nc for it?
+    prep_obs/m_read_EN4_profile.F90:354:    fname = 'forecast001'
+
+ncfopn(), common_blocks.h: micom_init.F does not need to read data from restart
+put use to common_blocks.h
+    micom_init/micom_init.F:105:      oldfile='forecast'//cmem//'.nc'
+    micom_init/micom_init.F:924:        status=nf_open(path(1:path_len)//'forecast_ice'//cmem//'.nc',
+
+Not now:
+    p2nc_writeforecast(): later
+        EnKF/m_point2nc.F90:32:  public p2nc_storeforecast
+        EnKF/m_point2nc.F90:33:  public p2nc_writeforecast
+        EnKF/m_point2nc.F90:37:  real(4), allocatable, dimension(:, :, :) :: forecast
+        EnKF/m_point2nc.F90:226:  ! Store the values of the forecast field No. `fid' in each output point to
+        EnKF/m_point2nc.F90:227:  ! the variable `forecast'.
+        EnKF/m_point2nc.F90:229:  subroutine p2nc_storeforecast(ni, nj, nrens, nfields, fid, field)
+        EnKF/m_point2nc.F90:242:    if (.not. allocated(forecast)) then
+        EnKF/m_point2nc.F90:243:       allocate(forecast(nrens, npoints, nfields))
+        EnKF/m_point2nc.F90:247:       forecast(:, n, fid) = field((jcoords(n) - 1) * ni + icoords(n), :)
+        EnKF/m_point2nc.F90:249:  end subroutine p2nc_storeforecast
+        EnKF/m_point2nc.F90:252:  ! This procedure consolidates all forecast fields for each output point 
+        EnKF/m_point2nc.F90:253:  ! together in the variable `forecast' on the master node, and then writes
+        EnKF/m_point2nc.F90:256:  subroutine p2nc_writeforecast
+        EnKF/m_point2nc.F90:275:       call send(forecast(:, :, my_first_iteration : my_last_iteration), 0, 0)
+        EnKF/m_point2nc.F90:279:          call receive(forecast(:, :, first_iteration(p) : last_iteration(p)), p - 1, 0)
+        EnKF/m_point2nc.F90:321:                   print *, 'ERROR: p2nc_writeforecast(): varname = "', trim(varname),&
+        EnKF/m_point2nc.F90:323:                   print *, 'ERROR: p2nc_writeforecast(): returning'
+        EnKF/m_point2nc.F90:331:          call nfw_put_var_real(fname, ncid, varid, forecast(:, p, kstart : kstart + nf - 1))
+        EnKF/m_point2nc.F90:337:  end subroutine p2nc_writeforecast
+DONE:
+    EnKF/m_get_micom_dim.F90:13:   inquire(file='forecast001.nc',exist=ex)
+    EnKF/m_get_micom_dim.F90:17:      call nfw_open('forecast001.nc', nf_nowrite, ncid)
+    EnKF/m_get_micom_dim.F90:19:     call nfw_inq_dimid('forecast001.nc', ncid, 'x', x_ID)
+    EnKF/m_get_micom_dim.F90:20:     call nfw_inq_dimid('forecast001.nc', ncid, 'y', y_ID)
+    EnKF/m_get_micom_dim.F90:21:     call nfw_inq_dimid('forecast001.nc', ncid, 'kk', z_ID)
+    EnKF/m_get_micom_dim.F90:23:     call nfw_inq_dimlen('forecast001.nc', ncid, x_ID, nx)
+    EnKF/m_get_micom_dim.F90:24:     call nfw_inq_dimlen('forecast001.nc', ncid, y_ID, ny)
+    EnKF/m_get_micom_dim.F90:25:     call nfw_inq_dimlen('forecast001.nc', ncid, z_ID, nz)
+    EnKF/m_get_micom_dim.F90:27:      stop 'ERROR: file forecast001.nc is missing'
+
+    EnKF/m_get_micom_nrens.F90:23:       inquire(exist = ex, file = 'forecast' // cmem // '.nc')
+    call update_fields(): (nothing to adjust, although it read tmpX5.uf repeatly)
+        EnKF/EnKF.F90:  call update_fields()  !! update model fields
+    EnKF/m_get_micom_fld.F90:58:     print *, 'ERROR: forecast file is missing '//trim(memfile)//'.nc'
+    EnKF/m_get_micom_fld.F90:103:     print *, 'ERROR: forecast file is missing '//trim(memfile)//'.nc'
+
+    get_micom_fld_new(), put_micom_fld(): distribute by level
+        Change reading in EnKF(line 261-:
+            do m = m1,m2 !! level, see distribute_iterations_field()
+            do k = 1,ENSSIZE
+                call get_micom_fld_new()
+                [run codes...]
+            end do
+            end do
+        To:
+            do m = 1,kdm
+            do k = 1,ENSSIZE
+                call get_micom_fld_recv_from_mem() !! need to disgu. inst_index
+                if(m.ge.m1 .and. m.le.m2)then
+                    [assign readfld to fld(member)]
+                end if
+            end do
+            end do
+        
+        EnKF/EnKF.F90:273:           memfile = 'forecast' // cmem
+        EnKF/EnKF.F90:308:        call p2nc_storeforecast(idm, jdm, ENSSIZE, numfields, m, fld(:, ENSSIZE * (m - m1) + 1 : ENSSIZE * (m + 1 - m1)))
+        EnKF/EnKF.F90:320:           memfile = 'forecast' // cmem
+        EnKF/EnKF.F90:332:  call p2nc_writeforecast
+
+    get_micom_fld_new():
+        EnKF/m_prep_4_EnKF.F90:17:!                    insitu_writeforecast() to the point after QC.
+        EnKF/m_prep_4_EnKF.F90:135:             call get_micom_fld_new(trim('forecast'//cmem), readfld,&
+        EnKF/m_prep_4_EnKF.F90:144:             call get_micom_fld_new(trim('forecast'//cmem), readfld, &
+        EnKF/m_prep_4_EnKF.F90:159:             call get_micom_fld_new(trim('forecast'//cmem), readfld, &
+        EnKF/m_prep_4_EnKF.F90:182:             call get_micom_fld_new(trim('forecast'//cmem), readfld, &
+        EnKF/m_prep_4_EnKF.F90:186:                call get_micom_fld_new(trim('forecast'//cmem), field3,&
+        EnKF/m_prep_4_EnKF.F90:257:          ! add forecast values to the observation-<TYPE>.nc files
+        EnKF/m_prep_4_EnKF.F90:259:          call add_forecast(unique_obs(iuobs), S(thisobs(1 : nthisobs), :), obs(thisobs(1 : nthisobs)))
+        EnKF/m_prep_4_EnKF.F90:270:             call insitu_writeforecast(unique_obs(iuobs), nobs, nrens, S, obs)
+        EnKF/m_prep_4_EnKF.F90:339:  ! This subroutine adds forecast observations (i.e Hx) to the NetCDF
+        EnKF/m_prep_4_EnKF.F90:342:  subroutine add_forecast(obstag, S, obs)
+        EnKF/m_prep_4_EnKF.F90:367:       print *, 'file "', trim(fname), 'not found, skip adding forecast'
+        EnKF/m_prep_4_EnKF.F90:370:       print *, 'dumping forecast to "', trim(fname), '"'
+        EnKF/m_prep_4_EnKF.F90:410:    if (.not. nfw_var_exists(ncid, 'forecast')) then
+        EnKF/m_prep_4_EnKF.F90:411:       call nfw_def_var(fname, ncid, 'forecast', nf_double, 1, dids(2), for_id)
+        EnKF/m_prep_4_EnKF.F90:413:       call nfw_inq_varid(fname, ncid, 'forecast', for_id)
+        EnKF/m_prep_4_EnKF.F90:415:    if (.not. nfw_var_exists(ncid, 'forecast_variance')) then
+        EnKF/m_prep_4_EnKF.F90:416:       call nfw_def_var(fname, ncid, 'forecast_variance', nf_double, 1, dids(2), forvar_id)
+        EnKF/m_prep_4_EnKF.F90:418:       call nfw_inq_varid(fname, ncid, 'forecast_variance', forvar_id)
+        EnKF/m_prep_4_EnKF.F90:458:  end subroutine add_forecast
+
+    call get_micom_fld_new():
+        EnKF/m_Generate_element_Si.F90:257:    fname = 'forecast'//cmem
+        EnKF/m_Generate_element_Si.F90:570:    fname = 'forecast'//cmem
+

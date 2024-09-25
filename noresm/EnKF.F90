@@ -20,6 +20,7 @@
 !                -- update the ensemble
 !
 ! Modifications:
+!                27/08/2024 PG: adjust for get BLOM data from memory and mpi
 !                15/09/2014 YW: Coupling automatically layer thicknesses to preserve 
 !                  the non-negativity of DP. The list of modified files is as follows:
 !                  -- distribute.F90
@@ -78,6 +79,13 @@ subroutine EnKF()
   use m_point2nc
   use netcdf
   use nfw_mod
+  use norcpm_otf, only: gather_blom_1i1l,who_need_data_raise_hand &
+                      , get_pe_start_end_iter, totalpe            &
+                      , put_blom_1i1l, reset_get_pe_start_end_iter&
+                      , set_uf_comm, free_uf_comm, save_nc_fld_update_fields &
+                      , bcast_x5_otf_from_pe0
+  use perf_mod, only: t_startf,t_stopf !!,t_initf,t_finalizef
+
   implicit none
 
   character(*), parameter :: ENKF_VERSION = "2.11"
@@ -90,7 +98,9 @@ subroutine EnKF()
   ! number of times X5tmp.uf is read from disk, which is the main bottleneck
   ! for the analysis time right now.
   !
-  integer, parameter :: NFIELD = 53
+  !! In norcpm_otf, NFIELD can be less so that data can be spread to more processes
+  !!     but cause error in update_fields()
+  integer, parameter :: NFIELD = 53 
 
   character(512) :: options
 
@@ -122,6 +132,15 @@ subroutine EnKF()
   integer :: m1, m2, nfields
   real :: infls(NFIELD)
   logical :: isdp(NFIELD)
+
+  !! norcpm_otf mod
+  logical :: ismyiter             !! based on distrubte.F90
+  logical :: is_scatter           !! scatter updated fld
+  integer :: dstrank,srcrank      !! rank of ALLESPID
+  integer :: nmyiter
+  logical :: isalldone , debug=.false.
+  integer :: infloopn
+  integer :: t0,t1,clockrate     !! timing
 
 #if defined(QMPI)
   call start_mpi()
@@ -166,6 +185,7 @@ subroutine EnKF()
   allocate(nlobs_array(idm, jdm))
   ! get model grid
   !
+  !!  should it be parallel?
   call get_micom_grid(modlon, modlat, depths, mindx, meandx, idm, jdm)
   if (master) then
      print *,'MEAN grid size and min from scpx/scpy :',meandx,mindx
@@ -179,15 +199,21 @@ subroutine EnKF()
   !
   call p2nc_init
 
+  !call t_startf('EnKF:initialisation')
   time0 = rtc()
 
   ! read measurements
   !
+  call t_startf('EnKF:obs_readobs()')
   if (master) then
      print *, 'EnKF: reading observations'
   end if
-  nobs = -1 !! make obs_readobs() read obs again
+  nobs = -1 !! make obs_readobs() read new linked obs 
+  call system_clock(t0,clockrate)
   call obs_readobs
+  call system_clock(t1)
+  if(master)print'(a,f8.4)','EnKF timing, obs_readobs(): ',real(t1-t0)/real(clockrate)
+
   if (master) then
      print '(a, i6)', '   # of obs = ', nobs
      print '(a, a, a, e10.3, a, e10.3)', '   first obs = "', trim(obs(1) % id),&
@@ -198,6 +224,7 @@ subroutine EnKF()
   if (master) then
      print *
   end if
+  call t_stopf('EnKF:obs_readobs()')
 
   ! read ensemble size and store in A
   !
@@ -222,28 +249,48 @@ subroutine EnKF()
   ! for assimilating in-situ data because of the dynamic vertical geometry in
   ! HYCOM
   !
+  call t_startf('EnKF:obs_prepareobs()')
+  call system_clock(t0,clockrate)
   call obs_prepareobs
+  call system_clock(t1)
+  if(master)print'(a,f8.4)','EnKF timing, obs_prepareobs(): ',real(t1-t0)/real(clockrate)
+  call t_stopf('EnKF:obs_prepareobs()')
 
   allocate(S(nobs, ENSSIZE), d(nobs))
+  call t_startf('EnKF:prep_4_EnKF()')
+  call system_clock(t0,clockrate)
   call prep_4_EnKF(ENSSIZE, d, S, depths, meandx / 1000.0, idm, jdm, kdm)
+  call system_clock(t1)
+  if(master)print'(a,f8.4)','EnKF timing, prep_4_EnKF(): ',real(t1-t0)/real(clockrate)
   if (master) then
      print *, 'EnKF: finished initialisation, time = ',  rtc() - time0
   end if
+  call t_stopf('EnKF:prep_4_EnKF()')
+  !call t_stopf('EnKF:initialisation')
 
   ! (no parallelization was required before this point)
 
   time1 = rtc()
 
+  call t_startf('EnKF:calc_X5()')
   allocate(X5(ENSSIZE, ENSSIZE, idm))
   allocate(X5check(ENSSIZE, ENSSIZE, idm))
+  call system_clock(t0,clockrate)
   call calc_X5(ENSSIZE, modlon, modlat, depths, mindx, meandx, d, S,&
-       LOCRAD, RFACTOR2, nlobs_array, idm, jdm)
+       LOCRAD, RFACTOR2, nlobs_array, idm, jdm) !! output to tmpX5.uf
   deallocate(d, S, X5check)
+  call system_clock(t1)
+  if(master)print'(a,f8.4)','EnKF timing, calc_X5(): ',real(t1-t0)/real(clockrate)
+  call system_clock(t0,clockrate)
+  call bcast_x5_otf_from_pe0()
+  call system_clock(t1)
+  if(master)print'(a,f8.4)','EnKF timing, bcast_x5_otf_from_pe0(): ',real(t1-t0)/real(clockrate)
   if (master) then
      print *, 'EnKF: finished calculation of X5, time = ', rtc() - time0
   end if
 
   allocate(fld(idm * jdm, ENSSIZE * NFIELD))
+  call t_stopf('EnKF:calc_X5()')
 
 #if defined(QMPI)
   call barrier()
@@ -258,85 +305,130 @@ subroutine EnKF()
   call barrier() !KAL - just for "niceness" of output
 #endif
   time2 = rtc()
-  do m1 = my_first_iteration, my_last_iteration, NFIELD
-     m2 = min(my_last_iteration, m1 + NFIELD - 1)
-     nfields = m2 - m1 + 1
 
-     do m = m1, m2
-!29/05/2015 fanf add 3 digit to qmpi
-!        print '(a, i2, a, i3, a, a6, a, i3, a, f11.0)',&
-!        print '(a, i3, a, i3, a, a6, a, i3, a, f11.0)',&
-!             "I am ", qmpi_proc_num, ', m = ', m, ", field = ",&
-!             fieldnames(m), ", k = ", fieldlevel(m), ", time = ",&
-!             rtc() - time2
-        if ( trim(fieldnames(m)) /= 'dp' ) then
-           if (fieldlevel(m)>=3) then    
-              allocate(dpfld(idm * jdm, ENSSIZE))
-              allocate(fld_ave(idm * jdm))
-              allocate(nb_ave(idm * jdm))
-              fld_ave(:)=0
-              nb_ave(:)=0
-              dpfld(:,:)=0
-           end if !field level not in the mixed layer
-        endif ! not dp
-        do k = 1, ENSSIZE
-           write(cmem, '(i3.3)') k
-           memfile = 'forecast' // cmem
-           ! reshaping and conversion to real(4)
-           call get_micom_fld_new(trim(memfile), readfld, fieldnames(m),&
-                fieldlevel(m), 1, idm, jdm)
-           fld(:, ENSSIZE * (m - m1) + k) = reshape(readfld, (/idm * jdm/))
-           if ( trim(fieldnames(m)) /= 'dp' ) then
-              !Do not apply fix in the ML dp=1..2
-              if (fieldlevel(m)>=3) then    
-                 call get_micom_fld_new(trim(memfile), readfld2, 'dp',&
-                      fieldlevel(m), 1, idm, jdm)
-                 ! reshaping and conversion to real(4)
-                 dpfld(:, k) = reshape(readfld2, (/idm * jdm/))
-                 !10 cm
-                 where(dpfld(:, k)>9806.)
-                    fld_ave=fld_ave+reshape(readfld, (/idm * jdm/))
-                    nb_ave=nb_ave+1
-                 endwhere
-              endif !field level not in the mixed layer
-           end if ! not dp
-        end do !ens size
-        !filled up empty layer with ensemble average value
-        if ( trim(fieldnames(m)) /= 'dp' ) then
-           if (fieldlevel(m)>=3) then    
-              do k = 1, ENSSIZE
-                 do i = 1, idm*jdm
-                    !10 cm
-                    if( dpfld(i, k)<9806. .and. nb_ave(i)>0 ) then
-                       !print *,'Fanf',i,k,nb_ave(i),fld_ave(i),fld(i, ENSSIZE * (m - m1) + k),fld_ave(i)/nb_ave(i),fieldlevel(m)
-                       fld(i, ENSSIZE * (m - m1) + k)= fld_ave(i)/nb_ave(i);
-                    endif
-                 enddo
-              enddo
-              deallocate(dpfld,fld_ave,nb_ave)
-           end if !field level not in the mixed layer
-        endif ! not dp
-        call p2nc_storeforecast(idm, jdm, ENSSIZE, numfields, m, fld(:, ENSSIZE * (m - m1) + 1 : ENSSIZE * (m + 1 - m1)))
-        infls(m - m1 + 1) = prm_getinfl(trim(fieldnames(m)));
-        isdp(m - m1 + 1) = (trim(fieldnames(m)) == 'dp' )
-     end do
+  !! data assimilation with parallel process
 
-     call update_fields(idm, jdm, ENSSIZE, nfields, nlobs_array, depths,&
-          fld(1,1), infls, isdp)
+  !! OTF method 2, 
+  !!!   1. fill fld of all tasks, each needs NFIELD layers
+  !!!   2. all tasks do update_fields()
+  !!!   3. put fld data to OCN tasks
+  !!!   4. fill fld of all tasks again, and so on
+  
+  infloopn = 0
+  call reset_get_pe_start_end_iter()
+  do  !! infinite loop
+  !!  feed loop, layer_count
+  !!    ask 1 task iteration start/continue and end/NFIELD, remember the last
+  !!    ocn tasks, feed him, until end/NFIELD
+  !!    loop though tasks, cycle
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! NEED revise, it hang everything
+    infloopn = infloopn +1
+    isalldone = .true.
+    nmyiter = 0
+    call t_startf('EnKF:gather model data')
+    !print'(a,i0)','EnKF.F90:294, start read data, infloopn = ',infloopn
+    do dstrank = 0, totalpe-1
+        call get_pe_start_end_iter(dstrank,my_first_iteration,my_last_iteration&
+                                    &,NFIELD,1,m1,m2,ismyiter) 
+        !if(ismyiter)write(*,*)'EnKF.F90:318, mype,m1,m2 = ',qmpi_proc_num,m1,m2
+        if (m1.eq.0 .and. m2.eq.0)cycle
+        if (m1.gt.m2)cycle
+        isalldone = .false.
+        if(ismyiter) nmyiter = m2-m1+1
+        do m = m1,m2  !! read fld
+            if (ismyiter .and. trim(fieldnames(m)) /= 'dp' &
+                         .and. fieldlevel(m)>=3 &
+                         .and. .not. allocated(dpfld)) then
+                allocate(dpfld(idm*jdm,ENSSIZE) &
+                        ,fld_ave(idm*jdm),nb_ave(idm*jdm),source=0.0_sp)
+            endif ! not dp and depth .ge.3, need be fill
+            if(ismyiter)then !! for update_fields()
+                infls(m - m1 + 1) = prm_getinfl(trim(fieldnames(m)))
+                isdp(m - m1 + 1) = (trim(fieldnames(m)) == 'dp' ) 
+            end if
+            do k = 1, ENSSIZE  !! read fld for each instance
+                ! reshaping and conversion to real(4)
 
-     do m = m1, m2
-        fieldcounter = (m - my_first_iteration) + 1
-        do k = 1, ENSSIZE
-           write(cmem,'(i3.3)') k
-           memfile = 'forecast' // cmem
-!           memfile = 'analysis' // cmem
-           ! reshaping and conversion to real(8)
-           readfld = reshape(fld(:, ENSSIZE * (m - m1) + k), (/idm, jdm/))
-           call put_micom_fld(trim(memfile), readfld, k,&
-                fieldnames(m), fieldlevel(m), 1, idm, jdm)
-        end do
-     end do
-  end do
+                !print'(a,i0)','EnKF.F90:315, call gather_blom_1i1l(), infloopn = ',infloopn
+                call gather_blom_1i1l(k,fieldnames(m),fieldlevel(m),dstrank,readfld)
+                !print'(a,i0)','EnKF.F90:317, gather_blom_1i1l() done, infloopn = ',infloopn
+                if(ismyiter) fld(:, ENSSIZE*(m-m1)+k) = reshape(readfld, (/idm*jdm/))
+                if(ismyiter.and.debug) then
+                    call save_nc_fld_update_fields(readfld,trim(fieldnames(m)),fieldlevel(m),'before_uf')
+                end if
+                if ( trim(fieldnames(m)) /= 'dp'.and.fieldlevel(m)>=3) then !! fill missing with ensmean
+                      !Do not apply fix in the ML dp=1..2
+                    call gather_blom_1i1l(k,'dp',fieldlevel(m),dstrank,readfld2)
+                    if(ismyiter)then
+                        ! reshaping and conversion to real(4)
+                        dpfld(:, k) = reshape(readfld2, (/idm * jdm/))
+                        !10 cm
+                        where(dpfld(:, k)>9806.)
+                            fld_ave=fld_ave+reshape(readfld, (/idm * jdm/))
+                            nb_ave=nb_ave+1
+                        endwhere
+                    end if
+                end if !! fill missing with ensmean
+            end do !! do k = 1, ENSSIZE
+            if (ismyiter .and. trim(fieldnames(m)) /= 'dp' .and. fieldlevel(m)>=3) then !! fill missing with ensmean
+                do k = 1, ENSSIZE  !! fill with average
+                    do i = 1, idm*jdm
+                        !10 cm
+                        if( dpfld(i, k)<9806. .and. nb_ave(i)>0 ) then
+                           fld(i, ENSSIZE * (m - m1) + k)= fld_ave(i)/nb_ave(i);
+                        endif
+                     enddo !!  do i = 1, idm*jdm
+                enddo !! do k = 1, ENSSIZE
+                deallocate(dpfld,fld_ave,nb_ave)
+            endif !! fill missing with ensmean
+            !!call p2nc_storeforecast(idm, jdm, ENSSIZE, numfields, m, fld(:, ENSSIZE * (m - m1) + 1 : ENSSIZE * (m + 1 - m1)))
+            if(ismyiter)then
+                call p2nc_storeforecast(idm, jdm, ENSSIZE, nmyiter, m, fld(:,:nmyiter))
+            end if
+        end do !! do m = m1,m2
+    end do ! dstrank
+    !print'(a,i0)','EnKF.F90:346, data read, infloopn = ',infloopn
+    call t_stopf('EnKF:gather model data')
+    if (isalldone) exit !! exit from the infinite loop
+  !!  every task do update_fields(), ok not every
+    call t_startf('EnKF:update_fields()')
+    if (nmyiter.gt.0)then  !! if there's data to update
+        !! update_fields(): read tmpX5.uf and cal fld change
+        call set_uf_comm(1) !! set ufcomm ufrank as group 1
+        call update_fields(idm, jdm, ENSSIZE, nmyiter, nlobs_array, depths,&
+                            &fld(1,1), infls, isdp)
+    else
+        call set_uf_comm(2) !! set ufcomm ufrank as group 2, not used here
+    end if !! if there's data to update
+    call free_uf_comm() !! free ufcomm
+    call t_stopf('EnKF:update_fields()')
+    !print'(a,i0)','EnKF.F90:354, data updated, putting, infloopn = ',infloopn
+  !!  putdata loop
+  !!    scatter data from 1st rank
+  !!  if layer_count .eq. numfields, exit loop
+    call t_startf('EnKF:put model data')
+    do srcrank = 0, totalpe-1
+        call get_pe_start_end_iter(srcrank,my_first_iteration,my_last_iteration&
+                                    &,NFIELD,2,m1,m2,ismyiter)
+        if (m1.eq.0 .and. m2.eq.0)cycle
+        do m = m1,m2
+            do k = 1, ENSSIZE
+                ! reshaping and conversion to real(8)
+                readfld = reshape(fld(:, ENSSIZE * (m - m1) + k), (/idm, jdm/))
+                if(ismyiter.and.debug) &
+                    call save_nc_fld_update_fields(readfld,trim(fieldnames(m)),fieldlevel(m),'after_uf')
+                !print'(a,x,a,x,i0,x,g0)','EnKF.F90:395, before put_blom_1i1l(), fldname, fldlev,maxval(readfld):' &
+                    !,trim(fieldnames(m)),fieldlevel(m),maxval(readfld)
+                call put_blom_1i1l(k,fieldnames(m),fieldlevel(m),srcrank,readfld)
+                !print'(a,3(i0,x))','EnKF.F90:371, after put_blom_1i1l(), infloopn,m,k = ',infloopn,m,k
+            end do ! do k = 1, ENSSIZE
+        end do ! m = m1,m2
+    end do ! srcrank
+
+    call t_stopf('EnKF:put model data')
+    !print'(a,i0)','EnKF.F90:374, data putted, next loop, infloopn = ',infloopn
+  end do !! infinite loop
+
   deallocate(X5)
   deallocate(fld)
 
@@ -355,8 +447,8 @@ subroutine EnKF()
 #if defined(QMPI)
   call barrier()
 #endif
-  print *, 'EnKF: Finished'
-  call stop_mpi()
+  !print *, 'EnKF: Finished'
+  !call stop_mpi()
 
 end subroutine EnKF
 

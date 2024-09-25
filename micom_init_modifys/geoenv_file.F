@@ -6,11 +6,18 @@ c --- Coriolis parameter
 c --- ------------------------------------------------------------------
 c
       use mod_xc
+      !! mod_grid from BLOM
+      use MOD_GRID, only: qclon, qclat, pclon, pclat, uclon, uclat,
+     .                    vclon, vclat, scqx, scqy, scpx, scpy, scux,
+     .                    scuy, scvx, scvy, scq2, scp2, scu2, scv2,
+     .                    qlon, qlat, plon, plat, ulon, ulat, vlon,
+     .                    vlat, depths, corioq, coriop, betafp, angle,
+     .                    cosang, sinang, nwp
 c
       implicit none
 c
 #include "common_blocks.h"
-#include "common_geo.h"
+CC use BLOM mod instead CC  #include "common_geo.h"
 #include "netcdf.inc"
 c
       real, dimension(itdm,jtdm) :: tmpg

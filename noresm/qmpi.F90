@@ -1,10 +1,5 @@
 #if defined(QMPI)
 module qmpi
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-! This is a dummy module, for running ESP component in NorESM2.
-!       [2023-10] fork by Ping-Gin Chiu
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
 !
 ! A module defining a minimalist interface to a subset of MPI.
 ! The first five primitives can in theory be used to parallelize
@@ -81,21 +76,12 @@ module qmpi
 ! end if
 ! ...
 !  
-
-  !! import communicator from CIME
-  !! get inter-esp communicator assign to espcomm
-  !! and replace all MPI subroutine/variables
-  use seq_comm_mct, only: ALLESPID, seq_comm_mpicom  !! blc
-  !! also :%s/mpi_comm_world/espcomm/g 
-
+    use norcpm_otf, only: mype, totalpe, espcomm
 #warning "COMPILING WITH QMPI CODE"
   include 'mpif.h'
-
   integer, public :: qmpi_proc_num, qmpi_num_proc, ierr, errorcode, mpistatus(mpi_status_size)
   logical, public :: master=.false., slave=.false.
 
-  !! for CIME communicator
-  integer :: espcomm
 ! some kinds. could use selected_real_kind(..) for this instead of hard coding
   integer, parameter :: dp=8, sp=4, long=8, short=2
 
@@ -203,10 +189,12 @@ contains
 !
     implicit none
 
-    !no use here!call mpi_init(ierr)
-    espcomm = seq_comm_mpicom(ALLESPID) !! overwrite to esp mpicommunicator
-    call mpi_comm_size(espcomm, qmpi_num_proc, ierr)
-    call mpi_comm_rank(espcomm, qmpi_proc_num, ierr)
+    !! for norcpm_otf
+    !call mpi_init(ierr)
+    !call mpi_comm_size(mpi_comm_world, qmpi_num_proc, ierr)
+    !call mpi_comm_rank(mpi_comm_world, qmpi_proc_num, ierr)
+    qmpi_proc_num = mype
+    qmpi_num_proc = totalpe
 
     master=.false.
     if(qmpi_proc_num==0) master=.true.
@@ -220,10 +208,8 @@ contains
 
   subroutine stop_mpi()
     implicit none
-    !no use here!call mpi_finalize(ierr)
-    !no use here!stop
-    !! just return to ESP run
-    return
+    call mpi_finalize(ierr)
+    stop
   end subroutine stop_mpi
 
   subroutine barrier(label)

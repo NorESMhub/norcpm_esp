@@ -2,21 +2,22 @@ module esp_comp_mct
 
     use mct_mod,          only: mct_aVect
     use esmf,             only: ESMF_Clock
+    use seq_timemgr_mod,  only: seq_timemgr_EClockGetData
     use seq_cdata_mod,    only: seq_cdata,seq_cdata_setptrs
-    use seq_infodata_mod, only: seq_infodata_PutData,seq_infodata_GetData
+    use seq_infodata_mod, only: seq_infodata_PutData,seq_infodata_GetData, &
+        seq_infodata_start_type_cont, seq_infodata_start_type_brnch, &
+        seq_infodata_start_type_start
     use shr_file_mod,     only: shr_file_getLogUnit
     use shr_sys_mod,      only: shr_sys_flush, shr_sys_abort
-    use norcpm_enkf,      only: norcpm_assim_step 
+    use norcpm_enkf,      only: norcpm_assim_step_otf, do_perturb_temp
+    use norcpm_otf,       only: inst_index,mype,ninst,NINST_ESP,iulog,espcomm &
+                              &,inst_name,inst_suffix, init_norcpm_otf &
+                              &,PERTURB_TEMP
 
     implicit none
     save
     private 
-    character(len=16) :: inst_name,inst_suffix
-    integer :: inst_index, mype ! instance index and pe of current process
-    integer :: ninst,NINST_ESP ! number of instances
-    integer :: iulog           ! log file
-    integer :: espcomm         ! communicator across ESPs
-    namelist /case/ NINST_ESP
+    namelist /case/ NINST_ESP,PERTURB_TEMP
 
     !--------------------------------------------------------------------------
     ! Public interfaces
@@ -46,6 +47,7 @@ CONTAINS
         integer :: mpicom
         type(seq_infodata_type), pointer :: infodata ! NorESM driver info data
         integer :: ierr
+        character(len=32) :: starttype
         !EOP
         !-------------------------------------------------------------------------------
 
@@ -73,7 +75,16 @@ CONTAINS
         ninst = NINST_ESP
 
         espcomm = seq_comm_mpicom(ALLESPID)
+
+        call seq_infodata_GetData(infodata, start_type=starttype)
+        
         mype = seq_comm_iam(ALLESPID) !! cross instance myrank
+
+        if(mype.eq.0)print'(2a)','esp_init_mct(), start_type = ',starttype
+        if(trim(starttype).eq.trim(seq_infodata_start_type_start))then
+            if(PERTURB_TEMP) do_perturb_temp = .true.
+        end if
+        call init_norcpm_otf() !! init something
     end subroutine esp_init_mct
 
 
@@ -88,17 +99,9 @@ CONTAINS
         type(mct_aVect)             ,intent(inout) :: d2x
 
         !EOP
-
-        integer :: fileid
-        character(len=255) :: rstfn, pausefn
-        integer :: ncid, ierr, varid
         !-------------------------------------------------------------------------------
 
-        
-        if (mype.eq.0)then  !! run DA script
-            write(iulog,*)'NorCPM ESP run' 
-        end if
-        call norcpm_assim_step(espcomm,EClock)
+        call norcpm_assim_step_otf(espcomm,EClock)
 
     end subroutine esp_run_mct
 

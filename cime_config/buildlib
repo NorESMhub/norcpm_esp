@@ -5,6 +5,7 @@ Build the norcpm component library, modified from mosart
 #pylint: disable=unused-wildcard-import, wildcard-import, multiple-imports
 #pylint: disable=wrong-import-position, invalid-name, too-many-locals
 import os, sys
+from time import sleep
 
 CIMEROOT = os.environ.get("CIMEROOT")
 if CIMEROOT is None:
@@ -82,12 +83,17 @@ def _build_norcpm():
         norcpm_cppdefs += ' -Dinivar=inivar_norcpm -Deosini=eosini_norcpm'
         norcpm_cppdefs += ' -Dmod_nctools=mod_nctools_norcpm'
 
+        userinc = '-I'+os.path.join(objroot, "ocn", "obj") ## include ocn obj
         # build the library
         complib = os.path.join(libroot, "libesp.a")
         makefile = os.path.join(casetools, "Makefile")
 
-        cmd = "%s complib -j %d MODEL=norcpm COMPLIB=%s -f %s USER_CPPDEFS='%s'" \
-            % (gmake, gmake_j, complib, makefile, norcpm_cppdefs)
+        cmd = "%s complib -j %d MODEL=norcpm COMPLIB=%s -f %s USER_CPPDEFS='%s' USER_INCLDIR=%s" \
+            % (gmake, gmake_j, complib, makefile, norcpm_cppdefs, userinc)
+
+        ## wait for mod_state.o of BLOM
+        while not os.path.isfile(os.path.join(objroot, "ocn", "obj",'mod_state.o')):
+            sleep(1)
 
         rc, out, err = run_cmd(cmd, from_dir=bldroot)
         expect(rc == 0, "Command %s failed rc=%d\nout=%s\nerr=%s" % (cmd, rc, out, err))

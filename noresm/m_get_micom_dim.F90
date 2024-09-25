@@ -1,6 +1,17 @@
 module m_get_micom_dim
 contains 
+
+!! Ping-Gin Chiu, 22Aug2024, for On-the-fly 
 subroutine get_micom_dim(nx,ny,nz)
+    use dimensions,  only: itdm,jtdm,kdm                  !! from blom
+    integer,intent(out) :: nx,ny,nz
+    nx = itdm
+    ny = jtdm
+    nz = kdm
+    return
+end subroutine  get_micom_dim
+
+subroutine get_micom_dim_readnc(nx,ny,nz)
    use netcdf
    use nfw_mod
 
@@ -27,7 +38,7 @@ subroutine get_micom_dim(nx,ny,nz)
    else
       stop 'ERROR: file forecast001.nc is missing'
    endif
-end subroutine  get_micom_dim
+end subroutine  get_micom_dim_readnc
 
 subroutine get_climato_dim(nx,ny,nz)
   use netcdf
@@ -52,7 +63,7 @@ subroutine get_climato_dim(nx,ny,nz)
       call nfw_inq_dimlen('mean_mod.nc', ncid, x_ID, nx)
       call nfw_inq_dimlen('mean_mod.nc', ncid, y_ID, ny)
       call nfw_inq_dimlen('mean_mod.nc', ncid, z_ID, nz)
-     call nfw_close('forecast001.nc', ncid) !! blc
+     call nfw_close('mean_mod.nc', ncid) !! blc
    else
       stop 'ERROR: file mean_mod.nc is missing'
    endif

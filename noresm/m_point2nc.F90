@@ -241,10 +241,10 @@ contains
        return
     end if
 
-    if (allocated(forecast)) deallocate(forecast)
-    !if (.not. allocated(forecast)) then
+    !!if (allocated(forecast)) deallocate(forecast)
+    if (.not. allocated(forecast)) then
        allocate(forecast(nrens, npoints, nfields))
-    !end if
+    end if
 
     do n = 1, npoints
        forecast(:, n, fid) = field((jcoords(n) - 1) * ni + icoords(n), :)

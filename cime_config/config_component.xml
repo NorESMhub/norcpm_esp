@@ -22,7 +22,7 @@
 
   <entry id="NORCPM_INPUTDATA">
     <type>char</type>
-    <default_value>/cluster/shared/noresm/norcpm</default_value>
+    <default_value>/cluster/projects/nn9039k/inputdata</default_value>
     <group>run_component_norcpm</group>
     <file>env_run.xml</file>
     <desc>The path to observation data for DA. Default value is for Betzy</desc>
@@ -43,7 +43,7 @@
   </entry>
   <entry id="NORCPM_PRODUCERLIST">
     <type>char</type>
-    <default_value>HADISST2,EN421,EN421</default_value>
+    <default_value>NOAA,EN422,EN422</default_value>
     <group>run_component_norcpm</group>
     <file>env_run.xml</file>
     <desc>Data assimilation data sources</desc>
@@ -54,6 +54,13 @@
     <group>run_component_norcpm</group>
     <file>env_run.xml</file>
     <desc>Data assimilation data variables</desc>
+  </entry>
+  <entry id="NORCPM_FREQUENCYLIST">
+    <type>char</type>
+    <default_value>DAY,MONTH,MONTH</default_value>
+    <group>run_component_norcpm</group>
+    <file>env_run.xml</file>
+    <desc>DA frequency, MONTH=15th of every month, DAY=every day 12:00 (tod=43200), 3DAY=based day of month</desc>
   </entry>
   <entry id="NORCPM_REF_PERIODLIST">
     <type>char</type>
@@ -137,7 +144,22 @@
     <default_value>1</default_value>
     <group>run_component_norcpm</group>
     <file>env_run.xml</file>
-    <desc>Do not know what is it. (TBD)</desc>
+    <desc>Diagnostic output. Not implied.</desc>
+  </entry>
+  <entry id="NORCPM_PERTURB_TEMP_STARTUP">
+    <type>logical</type>
+    <valid_values>TRUE,FALSE</valid_values>
+    <default_value>TRUE</default_value>
+    <group>run_component_norcpm</group>
+    <file>env_run.xml</file>
+    <desc>Perturb ocean temperature for startup run</desc>
+  </entry>
+  <entry id="NORCPM_DA_SINCE_DATE">
+    <type>integer</type>
+    <default_value>19820101</default_value>
+    <group>run_component_norcpm</group>
+    <file>env_run.xml</file>
+    <desc>Do DA from YYYYMMDD.</desc>
   </entry>
 
   <help>
