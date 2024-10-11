@@ -45,7 +45,7 @@ if [ "$1" == "delete" ] ;then
     fi
 fi
 
-${noresmdir}/cime/scripts/./create_newcase --case ${case} --mach betzy --res ${res} --compset ${compset} --project nn9039k 
+${noresmdir}/cime/scripts/./create_newcase --case ${case} --mach betzy --res ${res} --compset ${compset} --project nn9039k  --run-unsupported
 
 
 cd ${caseroot}/${case}
@@ -71,8 +71,8 @@ cd ${caseroot}/${case}
     ./xmlchange NINST_WAV=$NINST
     ./xmlchange NINST_ESP=$NINST
 
-./xmlchange STOP_N=STOP_N
-./xmlchange STOP_OPTION=STOP_OPTION
+./xmlchange STOP_N=$STOP_N
+./xmlchange STOP_OPTION=$STOP_OPTION
 ./xmlchange  --subgroup case.run  JOB_WALLCLOCK_TIME=72:00:00
 ./xmlchange RUN_STARTDATE=1982-01-01
 
