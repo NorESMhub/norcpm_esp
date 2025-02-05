@@ -92,7 +92,8 @@ def _build_norcpm():
             % (gmake, gmake_j, complib, makefile, norcpm_cppdefs, userinc)
 
         ## wait for mod_state.o of BLOM
-        while not os.path.isfile(os.path.join(objroot, "ocn", "obj",'mod_state.o')):
+        for i in range(600):  ## limited 10 min
+            if os.path.isfile(os.path.join(objroot, "ocn", "obj",'mod_state.o')): break
             sleep(1)
 
         rc, out, err = run_cmd(cmd, from_dir=bldroot)

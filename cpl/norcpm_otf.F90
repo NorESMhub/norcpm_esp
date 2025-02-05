@@ -258,11 +258,19 @@ subroutine put_blom_1i1l(dstinst,varname,lev,srcrank,putdata)
     ierr = 0
     if (allesp_rank .eq. srcrank)then  !! only one rank will be matched
         !! get dstinst ocn rootpe first
-        call MPI_RECV(ocn_rootpe,1,MPI_INTEGER,MPI_ANY_SOURCE,tag+5,espcomm,mpistat,ierr)
-        call MPI_SEND(putdata,size(putdata),MPI_REAL8,ocn_rootpe,tag,espcomm,ierr)
-        if(ierr.ne.0)print*,'ERROR,put_blom_1i1l(): recv error'
+        !print*,'put_blom_1i1l():261, mype, send to... who? :',mype
+        if (ocn_rank.eq.0.and.is_dstOCN)then !! if same pe 
+            !print*,'put_blom_1i1l():263, mype, I am the one!! :',mype
+        else
+            call MPI_RECV(ocn_rootpe,1,MPI_INTEGER,MPI_ANY_SOURCE,tag+5,espcomm,mpistat,ierr)
+            !print*,'put_blom_1i1l():263, mype, send to rank:',mype,ocn_rootpe
+            call MPI_SEND(putdata,size(putdata),MPI_REAL8,ocn_rootpe,tag,espcomm,ierr)
+            if(ierr.ne.0)print*,'ERROR,put_blom_1i1l(): recv error'
+        end if
     else if (ocn_rank.eq.0.and.is_dstOCN)then !! only one rank will be matched
+        !print*,'put_blom_1i1l():267, m pe,rneed data from:',mype,srcrank
         call MPI_SEND(allesp_rank,1,MPI_INTEGER,srcrank,tag+5,espcomm,ierr)
+        !print*,'put_blom_1i1l():269, mype, recv from rank:',mype,srcrank
         call MPI_RECV(putdata,size(putdata),MPI_REAL8,MPI_ANY_SOURCE,tag,espcomm,mpistat,ierr)
         if(ierr.ne.0)print*,'ERROR,put_blom_1i1l(): send error'
     else
@@ -273,11 +281,13 @@ subroutine put_blom_1i1l(dstinst,varname,lev,srcrank,putdata)
     if (is_dstOCN) then
         !! scatter to ocn tasks of dstinst
         !! mod_xc mnproc start from 1
+        !print*,'put_blom_1i1l():278, before xcaput(), mype:',mype
         call xcaput(putdata,tiled_var,1)  !! it ignore some land tile
         dstocn_comm = seq_comm_mpicom(OCNID(dstinst))
         !! assign to mod_state variable
         call assign_fld_by_varname_r8_1tile(varname,lev,tiled_var)
     end if
+    !print*,'put_blom_1i1l():283, mype, done:',mype
     return
 end subroutine put_blom_1i1l
 
