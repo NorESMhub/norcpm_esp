@@ -120,7 +120,7 @@ contains
    100 format (a8,2i3)
 
    if (nfld/=numfields) then
-      if (master) print *,'An error occured when reading '//infile
+      print *,'An error occured when reading '//infile
       call stop_mpi()
    end if
 

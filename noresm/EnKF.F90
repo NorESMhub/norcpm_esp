@@ -321,12 +321,11 @@ subroutine EnKF()
   !!    ask 1 task iteration start/continue and end/NFIELD, remember the last
   !!    ocn tasks, feed him, until end/NFIELD
   !!    loop though tasks, cycle
-  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! NEED revise, it hang everything
     infloopn = infloopn +1
     isalldone = .true.
     nmyiter = 0
     call t_startf('EnKF:gather model data')
-    !print'(a,i0)','EnKF.F90:294, start read data, infloopn = ',infloopn
+    !print'(a,i0)','EnKF.F90:329, start read data, infloopn = ',infloopn
     do dstrank = 0, totalpe-1
         call get_pe_start_end_iter(dstrank,my_first_iteration,my_last_iteration&
                                     &,NFIELD,1,m1,m2,ismyiter) 
@@ -387,10 +386,11 @@ subroutine EnKF()
             end if
         end do !! do m = m1,m2
     end do ! dstrank
-    !print'(a,i0)','EnKF.F90:346, data read, infloopn = ',infloopn
+    !print'(a,i0)','EnKF.F90:390, data read, infloopn = ',infloopn
     call t_stopf('EnKF:gather model data')
     if (isalldone) exit !! exit from the infinite loop
   !!  every task do update_fields(), ok not every
+    !print'(a,i0)','EnKF.F90:394, before update_fields(), infloopn = ',infloopn
     call t_startf('EnKF:update_fields()')
     if (nmyiter.gt.0)then  !! if there's data to update
         !! update_fields(): read tmpX5.uf and cal fld change
@@ -402,25 +402,33 @@ subroutine EnKF()
     end if !! if there's data to update
     call free_uf_comm() !! free ufcomm
     call t_stopf('EnKF:update_fields()')
+    !print'(a,i0)','EnKF.F90:406, after update_fields(), infloopn = ',infloopn
     !print'(a,i0)','EnKF.F90:354, data updated, putting, infloopn = ',infloopn
   !!  putdata loop
   !!    scatter data from 1st rank
   !!  if layer_count .eq. numfields, exit loop
+    !print'(a,i0)','EnKF.F90:411, before put model data, infloopn = ',infloopn
     call t_startf('EnKF:put model data')
     do srcrank = 0, totalpe-1
         call get_pe_start_end_iter(srcrank,my_first_iteration,my_last_iteration&
                                     &,NFIELD,2,m1,m2,ismyiter)
-        if (m1.eq.0 .and. m2.eq.0)cycle
+        if (m1.eq.0 .and. m2.eq.0)then
+            print*,'EnKF.F90:417, m1,m2 = 0, cycle'
+            cycle
+        end if
         do m = m1,m2
             do k = 1, ENSSIZE
                 ! reshaping and conversion to real(8)
                 readfld = reshape(fld(:, ENSSIZE * (m - m1) + k), (/idm, jdm/))
                 if(ismyiter.and.debug) &
                     call save_nc_fld_update_fields(readfld,trim(fieldnames(m)),fieldlevel(m),'after_uf')
-                !print'(a,x,a,x,i0,x,g0)','EnKF.F90:395, before put_blom_1i1l(), fldname, fldlev,maxval(readfld):' &
-                    !,trim(fieldnames(m)),fieldlevel(m),maxval(readfld)
+                !print'(a,x,a,x,i0,x,g0,x,3i3)','EnKF.F90:423, before put_blom_1i1l(), fldname, fldlev,maxval(readfld),m1,m2 :' &
+                    !,trim(fieldnames(m)),fieldlevel(m),maxval(readfld),m1,m2,k
+                call system_clock(t0,clockrate)
                 call put_blom_1i1l(k,fieldnames(m),fieldlevel(m),srcrank,readfld)
-                !print'(a,3(i0,x))','EnKF.F90:371, after put_blom_1i1l(), infloopn,m,k = ',infloopn,m,k
+                call system_clock(t1)
+                !print'(a,3(i0,x),x,f8.4)','EnKF.F90:426, after put_blom_1i1l(), infloopn,m,k = ',infloopn,m,k,real(t1-t0)/real(clockrate)
+                !call barrier()
             end do ! do k = 1, ENSSIZE
         end do ! m = m1,m2
     end do ! srcrank
