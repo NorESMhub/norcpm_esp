@@ -15,6 +15,7 @@
 
 
 ### Required settings
+  0. There are some setting need to be done in NorESM, please see doc/noresm_settings.md
   1. Compset need be set to NHISTNCPM or NHISTNCPMfrc2
   2. NINST must larger than 1. 10 is suggested for scientific meaning.
   3. NTASKS can be default but need to be multiple to NINST. 
