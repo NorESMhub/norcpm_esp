@@ -82,6 +82,5 @@ ln -s $(./xmlquery EXEROOT --value)     ./bld
 ln -s $(./xmlquery DOUT_S_ROOT --value) ./archive
 
 ./case.setup
-#./preview_namelists
 ./case.build
 ./case.submit

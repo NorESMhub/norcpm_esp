@@ -16,13 +16,13 @@
 
 ### Required settings
   0. There are some setting need to be done in NorESM, please see doc/noresm_settings.md
-  1. Compset need be set to NHISTNCPM or NHISTNCPMfrc2
+  1. Compset need be set to NHISTNCPM
   2. NINST must larger than 1. 10 is suggested for scientific meaning.
   3. NTASKS can be default but need to be multiple to NINST. 
      However, it is suggested to use one node per instance (Betzy)
      The NTASKS_ESP need to cover all CPUs.
 
-  Detail setting can be found in doc/create_norcpm_esp.sh
+  Example run script can be found in doc/norcpm_esp_test.sh
 
 ### Usage
   Please start from [NorESM repo](https://github.com/NorESMhub/NorESM). 
