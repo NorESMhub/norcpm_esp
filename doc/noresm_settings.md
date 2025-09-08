@@ -17,7 +17,7 @@ NorESM/cime/config/cesm/config_files.xml:
     <type>char</type>
     <default_value>unset</default_value>
     <values>
-      <value component="norcpm"    >$SRCROOT/components/norcpm</value> !! <--- add this line
+      <value component="norcpm"    >$SRCROOT/components/norcpm</value> <!--- add this line -->
       <value component="desp"      >$CIMEROOT/src/components/data_comps/desp</value>
       <value component="sesp"      >$CIMEROOT/src/components/stub_comps/sesp</value>
     </values>
@@ -28,7 +28,7 @@ NorESM/cime/config/cesm/config_files.xml:
   </entry>
 ```
 ### Add a compset conatains NorCPM
-cime_config/config_compsets.xml:
+NorESM/cime_config/config_compsets.xml:
 ```
   <!-- NorCPM as esp HIST compset. Add this compset -->
   <compset>
@@ -36,3 +36,7 @@ cime_config/config_compsets.xml:
     <lname>HIST_CAM60%NORESM_CLM50%BGC-CROP_CICE%NORESM-CMIP6_BLOM%ECO_MOSART_SGLC_SWAV_NORCPM_BGC%BDRDDMS</lname>
   </compset>
 ```
+
+## BLOM multi-instance patch
+There are also patches need in BLOM in NorESM 2.1.3
+Please check INSTALL.sh for detail.

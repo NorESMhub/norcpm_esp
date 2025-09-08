@@ -1,4 +1,7 @@
 #!/bin/bash -e
+## This test script is used on Betzy.
+## Default case dir is at current work dir.
+## Default build and run dir is at /cluster/work/$USER/noresm
 
 case=norcpm_esp_test01
     NINST=10
@@ -35,10 +38,10 @@ caseroot=.
 
 ## cleaning old build
 echo "To clean old build:"
-echo "    rm -rf ~/work/{archive,noresm,.}/${case}"
+echo "    rm -rf /cluster/work/users/${USER}/{archive,noresm,.}/${case}"
 if [ "$1" == "delete" ] ;then
     echo 'cleaning old bld'
-    rm -rf ~/work/{archive,noresm,.}/${case}
+    rm -rf /cluster/work/users/${USER}/{archive,noresm,.}/${case}
     rm -rf ${caseroot}/${case}/
     if [ "$2" == "only" ] ;then
         exit

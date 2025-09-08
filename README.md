@@ -22,6 +22,7 @@
      However, it is suggested to use one node per instance (Betzy)
      The NTASKS_ESP need to cover all CPUs.
 
+  Detail setup from NorESM 2.1.3 can be found in doc/INSTALL.sh
   Example run script can be found in doc/norcpm_esp_test.sh
 
 ### Usage
